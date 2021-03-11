@@ -45,23 +45,6 @@ class Crypto(Binance_all, Indicators, Portfolio):
         self.quantity_to_sell = self.format_value(self.owned_stock_quantity - self.step_size/2, self.step_size)
         self.orderID = None
 
-    def get_prediction(self):
-        try:
-            array_prediction = self.df.iloc[-50:, 1:]
-            array_prediction_list = array_prediction.values.tolist()
-            dict_for_pred = {'array': str(array_prediction_list), "symbol": self.symbol}
-            #np.save('test_dict.npy', dict_for_pred)
-            response = upload_pred_input_to_s3(dictionary= dict_for_pred,
-                                               object_name= "pred_inp/" + "pred_inp_" + str(self.symbol) + ".json",
-                                               filename= "/tmp/" + "pred_inp_" + str(self.symbol) +".json")
-            res = requests.post(variables.url_prediction, data=dict_for_pred, timeout=3)
-            prediction = float(res.content)
-            print(f"prediction for {self.symbol} is {prediction}")
-        except:
-            prediction = None
-            print("It was not possible to get the prediction from the API")
-        return prediction
-
     def step_size_to_precision(self, ss):
         return format(ss, ".10f").find('1') - 1
 
@@ -115,7 +98,7 @@ class Crypto(Binance_all, Indicators, Portfolio):
         return response
 
 
-    def getSymbolData(self,):
+    def getSymbolData(self):
         """ Gets trading data for one symbol """
 
         params = '?&symbol=' + self.symbol + '&interval=' + self.interval + "&limit=" + str(self.limit)

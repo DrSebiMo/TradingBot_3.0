@@ -8,7 +8,7 @@ import json
 import numpy as np
 
 class Bot(Portfolio):
-    def __init__(self, crypto):
+    def __init__(self, crypto, purchase_amount):
         """Instantiating all the parameters"""
         self.crypto = crypto
         self.step_size = crypto.step_size
@@ -19,10 +19,17 @@ class Bot(Portfolio):
         self.buying_time = None
         self.selling_time = None
         self.price_variation = self.df.close.values[1:] - self.df.close.values[:-1] #np.nanmedian(self.df.close.values[1:] - self.df.close.values[:-1]) #crypto.df["diff_close"].median()
-        self.thresholdPV_up = np.quantile(self.price_variation, 0.7)
-        self.thresholdPV_down = np.quantile(self.price_variation, 0.3)
+        self.threshold = 40
+
+        #self. = np.quantile(self.price_variation, 0.7)
+        #self.thresholdPV_down = np.quantile(self.pricthresholdPV_upe_variation, 0.3)
         #self.prediction = crypto.prediction
-        self.purchase_amount = float(sellprice_from_dynamo(self.symbol)["Item"]["value"])
+        try:
+            self.purchase_amount = purchase_amount
+        except:
+            self.purchase_amount = 40
+            print("Could not download last sell-price from DynamoDB")
+
         #self.last_prediction = float(get_last_pred(self.symbol)["Item"]["value"])
         self.latest_price = crypto.last_price
         self.buying_price: float = 0
@@ -38,14 +45,16 @@ class Bot(Portfolio):
             res = self.monitor_stock_4sell(row_number)
             print("Sell Check", res)
         else:
-            if self.not_invested_usdt < variables.purchase_amount:
+            res = self.monitor_stock_4buy(row_number)
+            print("Buy Check", res)
+            """if self.not_invested_usdt < variables.purchase_amount:
                 print(f"Not Checking for buying because we have {self.not_invested_usdt} € available")
             else:
                 res = self.monitor_stock_4buy(row_number)
-                print("Buy Check", res)
+                print("Buy Check", res)"""
 
     def monitor_stock_4buy(self, row_number) -> bool:
-        if (self.df.iloc[-1]["mom"] > 5):# and self.df["mom_diff"] > 0:
+        if (self.df.iloc[-1]["mom"] > self.threshold) and (self.df.iloc[-1]["ma_mom_win"] < self.df.iloc[-1]["close"]):# and (self.df.iloc[-1]["mom_diff"] > 0):
             response = self.crypto.make_order_buy(quoteOrderQty=variables.purchase_amount)
             if response.status_code == 200:
                 json_data = json.loads(response.text)
@@ -89,14 +98,16 @@ class Bot(Portfolio):
         self.buying_time = response["Item"]["datetime"].split(".")[0]
 
 
-        if (self.df.iloc[-1]["mom"] < 5) or (self.df.iloc[-1]["mom_diff"] < 0) or (self.df.iloc[-1]["close"] < 0.98 * self.buying_price):
+        #if (self.df.iloc[-1]["mom"] < self.threshold) or (self.df.iloc[-1]["mom_diff"] < 0) or (self.df.iloc[-1]["close"] < 0.98 * self.buying_price):
+        if (self.df.iloc[-1]["mom"] < self.threshold):
             print(f"owned stock for symbol {self.symbol} is {self.owned_stock_quantity}")
             response = self.crypto.make_order_sell(quantity=self.quantity_to_sell)
             if response.status_code == 200:
                 json_data = json.loads(response.text)
                 self.selling_price = float(json_data["fills"][0]["price"])
+                return_perc = (self.selling_price - self.buying_price) / self.buying_price
 
-                sellprice_to_dynamo(self.symbol, self.selling_price)
+                sellprice_to_dynamo(self.symbol, self.purchase_amount * (1 + return_perc))
                 self.selling_time = self.df.iloc[row_number]["time"]
                 dict_selling = {
                     "symbol": self.symbol,
@@ -104,7 +115,7 @@ class Bot(Portfolio):
                     "selling_price": self.selling_price,
                     "buying_time": self.buying_time,
                     "selling_time": str(self.selling_time),
-                    "return_perc": (self.selling_price - self.buying_price) / self.buying_price * 100
+                    "return_perc": return_perc * 100
                 }
                 send_message_to_telegram(f"{self.symbol} SOLD, bought at price {self.buying_price}, sold at price of: {self.selling_price}, return of the investment: {round((self.selling_price - self.buying_price) / self.buying_price * 100, 2)}")
                 upload_file_to_s3(dictionary=dict_selling)

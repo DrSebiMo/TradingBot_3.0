@@ -6,6 +6,9 @@ import csv
 from datetime import datetime
 import json
 from binance_lib import variables
+import pandas as pd
+import numpy as np
+
 
 # Function to send a message to telegram bot
 def send_message_to_telegram(bot_message):
@@ -145,3 +148,21 @@ def convert_response_for_dynamodb(response):
     dynamo_transactions_dict["qty"] = response["fills"][0]["qty"]
     dynamo_transactions_dict["commission"] = response["fills"][0]["commission"]
     return dynamo_transactions_dict
+
+def matrix_manupilation(allocation_matrix, allocation, mom_threshold):
+    allocation_matrix = allocation_matrix.T
+    allocation_matrix.index = pd.Series(allocation_matrix.index).apply(lambda a: a[:-4])
+    temp = allocation.df_portfo
+    temp.index = allocation.df_portfo.asset
+    temp = temp.drop(columns='asset')
+    alloc = pd.merge(temp, allocation_matrix, how="outer", left_index=True, right_index=True)
+
+    alloc = alloc.sort_values(by=['mom'], ascending= False)
+    free_money = sum(alloc[alloc.mom < mom_threshold].USDT) + float(alloc["USDT"].iloc[np.where(alloc.index=="USDT")])
+
+    sell_list = alloc[alloc.mom < mom_threshold]
+    alloc = alloc[alloc.mom > mom_threshold]
+    alloc = alloc.sort_values(by=['vola_std'], ascending=False)
+    alloc["purchase_amount"] = alloc.vola_score/sum(alloc.vola_score) * free_money
+    return sell_list, alloc
+
